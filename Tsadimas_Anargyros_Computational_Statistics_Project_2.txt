@@ -1,0 +1,155 @@
+##Computational Statistics Project 2
+
+#a)
+x<-c(4.38170935,5.86605115,0.08693062,7.24952066,3.26935714,9.45383933,
+       1.92710621,1.77927243,1.75053731,8.99836312,0.33450206,2.94377355,
+       7.74332799,2.44866289,3.29400590,2.70853622,2.61065839,4.72413396,
+       7.63686012,3.61192216,2.95363254,5.55378675,0.79146765,5.06526897,
+       3.64384939,2.03942813,3.83929464,4.11327976,2.69089680,1.79660714,
+       1.33759225,1.68592814,8.34045968,5.82885086,3.45971449,6.93351442,
+       0.69993473,4.32515927,3.38308319,3.28657327,3.50398803,7.49483920,
+       2.22829899,2.35169607,3.11215438,7.65358729,4.28216884,3.87096462,
+       4.17750595,2.66457384,1.87973687,2.10397691,4.34236660,3.80668887,
+       1.21306523,6.37872649,6.81015611,1.08455500,3.05413906,2.04478294,
+       2.66103009,0.39046278,2.51118075,0.80291267,2.38229129,0.92098833,
+       2.48412836,2.31215437,1.79662201,1.59236169,1.30797571,0.58078258,
+       1.92483707,2.82764835,3.60332928,1.92565330,1.34342445,1.94846245,
+       0.85049624,2.55830924,2.51121772,3.86825797,1.69653642,2.91929202,
+       1.49855040,1.10113596,3.02557431,3.85222134,2.34447816,2.07885960,
+       6.17794197,3.98412930,0.84828429,0.72929198,5.06551587,2.70751209,
+       0.79636921,1.88026641,7.05899666,1.04023380)
+
+#our pdf first
+pdf <- function(x, theta) {
+  ((theta^3) / (theta + 1)) * x * (1 + x / 2) * exp(-theta * x)
+}
+
+n<-length(x)
+
+
+#then the logLikelihood  l(θ)
+logLikelihood<-function(x,theta) {
+  (n*(log(theta^3)-log(theta + 1))+sum(log(x)+log(1+x/2))-theta*sum(x))
+}
+
+mean_x <- mean(x)
+
+#then the first derivative of logLikelihood set to zero  
+#which is my F(θ) for the Newton-Raphson algorithm
+
+
+first_der_logLikelihood <- function(x, theta) {
+  mean_x * theta^2 + (mean_x - 2) * theta - 3
+}
+
+second_der_logLikelihood <- function(x, theta) {
+  2 * mean_x * theta + (mean_x - 2)
+}
+
+
+#we initialize the first value for Newton - Raphson algorithm
+
+estimate_theta <- function(data) {
+  mean_data <- mean(data)  # Recalculate the mean for the given dataset
+  theta <- 1  # Initial guess
+  vre <- FALSE
+  
+  while (!vre) {
+    first_derivative <- mean_data * theta^2 + (mean_data - 2) * theta - 3
+    second_derivative <- 2 * mean_data * theta + (mean_data - 2)
+    theta_new <- theta - first_derivative / second_derivative
+    
+    if (abs(theta_new - theta) < 1e-6) {
+      vre <- TRUE
+    }
+    theta <- theta_new
+  }
+  
+  theta  # Return the estimated value of theta
+}
+
+
+theta_estimated <- estimate_theta(x)
+print(theta_estimated)#the value of theta
+## [1] 0.797472
+
+
+#b)
+
+#now we want to estimate the standard error using parametric bootstrap
+#we need to simulate data from the original distribution given the theta we found
+
+xx <- seq(0, 15, by = 0.001)
+M <- 1.15
+plot(xx, pdf(xx, theta_estimated), type = "l", ylim = c(0, M * max(dgamma(xx, 2, 0.6))))
+lines(xx, M * dgamma(xx, 2, 0.6), col = 2)
+
+
+#we will use rejection method 
+generate_samples <- function(theta_estimated, num_samples = 5000, M = 1.1) {
+  # Generate samples using the rejection method
+  x_rejection <- rgamma(num_samples, 2, 0.6)
+  max_pdf <- max(pdf(seq(0, max(x_rejection), length.out = 1000), theta_estimated)) * M
+  y <- runif(num_samples, 0, max_pdf)
+  keep <- y < pdf(x_rejection, theta_estimated)
+  
+  # Return the accepted points
+  accepted_points <- x_rejection[keep]
+  return(accepted_points)
+}
+
+# Generate samples using the estimated theta
+sample_from_distribution <- generate_samples(theta_estimated)
+hist(sample_from_distribution)
+
+#now the parametric bootstrap
+
+
+B <- 5000
+bootstrap_thetas <- numeric(B)
+
+for (i in 1:B) {
+  # Generate new dataset using the rejection method
+  simulated_data <- generate_samples(theta_estimated, num_samples = length(x))
+  
+  # Estimate theta for the simulated dataset using the Newton-Raphson method
+  bootstrap_thetas[i] <- estimate_theta(simulated_data)
+}
+
+# Calculate standard error
+se_bootstrap <- sd(bootstrap_thetas)
+se_bootstrap
+
+#c)
+
+cdf <- function(x, theta) {
+  integrate(function(t) pdf(t, theta), lower = 0, upper = x)$value
+}
+
+# Define the test statistic function
+stat <- function(x, theta) {
+  n <- length(x)
+  x_sorted <- sort(x)
+  emp <- (1:n) / n
+  theor <- sapply(x_sorted, function(xi) cdf(xi, theta))  # Apply cdf to each element of x
+  sum(abs(emp - theor))
+}
+
+
+# Calculate the test statistic 
+tobs <- stat(x, theta_estimated)
+
+# Monte Carlo Simulation
+B <- 9999
+t <- rep(NA, B)
+for (i in 1:B) {
+  bootx <- generate_samples(theta_estimated, num_samples = length(x))  # Generate a simulated dataset
+  t[i] <- stat(bootx, theta_estimated)
+}
+
+# Calculate the p-value
+p_value <- (sum(t >= tobs) + 1) / (B + 1)
+p_value
+# Ho : the data x are drawn from the distribution of pdf f(x,θ)
+# p-value :[1] 0.998 > 0.05 so i do not reject the null hypothesis
+# the data could plausibly have come from the specified distribution.
